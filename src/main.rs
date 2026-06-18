@@ -1,1 +1,12 @@
-fn main() {\n    println!("Starting Rust-Batch-Processor service...");\n}\n
+use actix_web::{get, App, HttpResponse, HttpServer, Responder};
+#[get("/health")]
+async fn health() -> impl Responder {
+    HttpResponse::Ok().json(serde_json::json!({"status": "healthy"}))
+}
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    HttpServer::new(|| App::new().service(health))
+        .bind("0.0.0.0:8080")?
+        .run()
+        .await
+}

@@ -1,1 +1,8 @@
-[package]\nname = "rust-batch-processor"\nversion = "0.1.0"\nedition = "2021"\n
+[package]
+name = "service"
+version = "0.1.0"
+edition = "2021"
+[dependencies]
+actix-web = "4"
+serde_json = "1.0"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
