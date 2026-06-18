@@ -1,0 +1,1 @@
+# Rust-Batch-Processor\n\n## Overview\nEnterprise-grade batch processor implementation in Rust.\n\n## Quick Start (1-Click Build)\n\n```bash\ngit clone https://github.com/skylerblue333/Rust-Batch-Processor.git\ncd Rust-Batch-Processor\n# Build instructions depend on the language\n```\n

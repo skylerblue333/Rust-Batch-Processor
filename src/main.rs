@@ -1,0 +1,1 @@
+fn main() {\n    println!("Starting Rust-Batch-Processor service...");\n}\n
