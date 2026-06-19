@@ -1,1 +1,17 @@
-# Rust-Batch-Processor\n\n## Overview\nEnterprise-grade batch processor implementation in Rust.\n\n## Quick Start (1-Click Build)\n\n```bash\ngit clone https://github.com/skylerblue333/Rust-Batch-Processor.git\ncd Rust-Batch-Processor\n# Build instructions depend on the language\n```\n
+# Rust-Batch-Processor
+
+![CI](https://github.com/skylerblue333/Rust-Batch-Processor/workflows/CI/badge.svg)
+
+High-performance, memory-safe Rust service for processor operations.
+
+## Features
+- Zero-cost abstractions using Actix-Web
+- Thread-safe Mutex state management
+- Dockerized minimal footprint deployment
+
+## Quick Start
+```bash
+cargo test
+cargo run
+curl http://localhost:8080/health
+```

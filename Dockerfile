@@ -1,8 +1,10 @@
-FROM rust:1.73 as builder
-WORKDIR /usr/src/app
+FROM rust:1.74-slim AS builder
+WORKDIR /app
 COPY . .
 RUN cargo build --release
+
 FROM debian:bookworm-slim
-COPY --from=builder /usr/src/app/target/release/service /usr/local/bin/service
+WORKDIR /app
+COPY --from=builder /app/target/release/rust-batch-processor .
 EXPOSE 8080
-CMD ["service"]
+CMD ["./rust-batch-processor"]
