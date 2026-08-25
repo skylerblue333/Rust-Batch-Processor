@@ -49,7 +49,9 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, code) = match &self.0 {
             ProcessorError::DuplicateId(_) => (StatusCode::CONFLICT, "duplicate_id"),
-            ProcessorError::CapacityExceeded(_) => (StatusCode::TOO_MANY_REQUESTS, "capacity_exceeded"),
+            ProcessorError::CapacityExceeded(_) => {
+                (StatusCode::TOO_MANY_REQUESTS, "capacity_exceeded")
+            }
             ProcessorError::InvalidConfig(_) | ProcessorError::InvalidItem(_) => {
                 (StatusCode::UNPROCESSABLE_ENTITY, "invalid_request")
             }
@@ -57,7 +59,14 @@ impl IntoResponse for ApiError {
                 (StatusCode::SERVICE_UNAVAILABLE, "state_unavailable")
             }
         };
-        (status, Json(ErrorResponse { error: code, detail: self.0.to_string() })).into_response()
+        (
+            status,
+            Json(ErrorResponse {
+                error: code,
+                detail: self.0.to_string(),
+            }),
+        )
+            .into_response()
     }
 }
 
@@ -68,12 +77,16 @@ async fn health() -> Json<HealthResponse> {
     })
 }
 
-async fn ready(State(processor): State<Arc<BatchProcessor>>) -> Result<Json<ReadyResponse>, ApiError> {
+async fn ready(
+    State(processor): State<Arc<BatchProcessor>>,
+) -> Result<Json<ReadyResponse>, ApiError> {
     processor.stats()?;
     Ok(Json(ReadyResponse { ready: true }))
 }
 
-async fn stats(State(processor): State<Arc<BatchProcessor>>) -> Result<Json<ProcessorStats>, ApiError> {
+async fn stats(
+    State(processor): State<Arc<BatchProcessor>>,
+) -> Result<Json<ProcessorStats>, ApiError> {
     Ok(Json(processor.stats()?))
 }
 
