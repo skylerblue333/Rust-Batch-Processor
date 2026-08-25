@@ -1,48 +1,125 @@
-use actix_web::{web, App, HttpResponse, HttpServer, Responder};
-use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use app::BatchProcessor;
+use axum::{
+    extract::State,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    routing::{get, post},
+    Json, Router,
+};
+use serde::Serialize;
+use sky_batch_processor::{BatchItem, BatchProcessor, ProcessorError, ProcessorStats};
+use std::{env, sync::Arc};
 
-#[derive(Deserialize)]
-struct EnqueueRequest {
-    items: Vec<String>,
+#[derive(Debug, Serialize)]
+struct EnqueueResponse {
+    queued: usize,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 struct ProcessResponse {
-    processed: usize,
-    total_processed: usize,
+    processed: Vec<BatchItem>,
+    stats: ProcessorStats,
+}
+
+#[derive(Debug, Serialize)]
+struct HealthResponse {
+    status: &'static str,
+    service: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct ReadyResponse {
+    ready: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct ErrorResponse {
+    error: &'static str,
+    detail: String,
+}
+
+struct ApiError(ProcessorError);
+
+impl From<ProcessorError> for ApiError {
+    fn from(value: ProcessorError) -> Self {
+        Self(value)
+    }
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        let (status, code) = match self.0 {
+            ProcessorError::DuplicateId(_) => (StatusCode::CONFLICT, "duplicate_id"),
+            ProcessorError::CapacityExceeded(_) => (StatusCode::TOO_MANY_REQUESTS, "capacity_exceeded"),
+            ProcessorError::InvalidConfig(_) | ProcessorError::InvalidItem(_) => {
+                (StatusCode::UNPROCESSABLE_ENTITY, "invalid_request")
+            }
+            ProcessorError::StateUnavailable => {
+                (StatusCode::SERVICE_UNAVAILABLE, "state_unavailable")
+            }
+        };
+        (status, Json(ErrorResponse { error: code, detail: self.0.to_string() })).into_response()
+    }
+}
+
+async fn health() -> Json<HealthResponse> {
+    Json(HealthResponse {
+        status: "ok",
+        service: "sky-batch-processor",
+    })
+}
+
+async fn ready(State(processor): State<Arc<BatchProcessor>>) -> Result<Json<ReadyResponse>, ApiError> {
+    processor.stats()?;
+    Ok(Json(ReadyResponse { ready: true }))
+}
+
+async fn stats(State(processor): State<Arc<BatchProcessor>>) -> Result<Json<ProcessorStats>, ApiError> {
+    Ok(Json(processor.stats()?))
 }
 
 async fn enqueue(
-    processor: web::Data<Arc<BatchProcessor>>,
-    req: web::Json<EnqueueRequest>,
-) -> impl Responder {
-    for (i, item) in req.items.iter().enumerate() {
-        processor.enqueue(app::BatchItem { id: i as u64, payload: item.clone() });
+    State(processor): State<Arc<BatchProcessor>>,
+    Json(items): Json<Vec<BatchItem>>,
+) -> Result<(StatusCode, Json<EnqueueResponse>), ApiError> {
+    let queued = processor.enqueue_many(items)?;
+    Ok((StatusCode::ACCEPTED, Json(EnqueueResponse { queued })))
+}
+
+async fn process_batch(
+    State(processor): State<Arc<BatchProcessor>>,
+) -> Result<Json<ProcessResponse>, ApiError> {
+    let processed = processor.process_batch()?;
+    let stats = processor.stats()?;
+    Ok(Json(ProcessResponse { processed, stats }))
+}
+
+fn env_usize(name: &str, default: usize) -> Result<usize, String> {
+    match env::var(name) {
+        Ok(value) => value
+            .parse::<usize>()
+            .map_err(|_| format!("{name} must be a positive integer")),
+        Err(env::VarError::NotPresent) => Ok(default),
+        Err(env::VarError::NotUnicode(_)) => Err(format!("{name} must be valid UTF-8")),
     }
-    HttpResponse::Ok().json(serde_json::json!({ "queued": req.items.len() }))
 }
 
-async fn process_batch(processor: web::Data<Arc<BatchProcessor>>) -> impl Responder {
-    let processed = processor.process_batch();
-    HttpResponse::Ok().json(ProcessResponse {
-        processed,
-        total_processed: processor.processed_count(),
-    })
-}
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let batch_size = env_usize("BATCH_SIZE", 100)?;
+    let max_queue = env_usize("MAX_QUEUE", 10_000)?;
+    let bind_addr = env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".to_owned());
+    let processor = Arc::new(BatchProcessor::new(batch_size, max_queue)?);
 
-#[actix_web::main]
-async fn main() -> std::io::Result<()> {
-    let processor = Arc::new(BatchProcessor::new(100));
-    println!("Rust-Batch-Processor running on :8080");
-    HttpServer::new(move || {
-        App::new()
-            .app_data(web::Data::new(processor.clone()))
-            .route("/api/v1/enqueue", web::post().to(enqueue))
-            .route("/api/v1/process", web::post().to(process_batch))
-    })
-    .bind(("0.0.0.0", 8080))?
-    .run()
-    .await
+    let app = Router::new()
+        .route("/health", get(health))
+        .route("/ready", get(ready))
+        .route("/api/v1/stats", get(stats))
+        .route("/api/v1/enqueue", post(enqueue))
+        .route("/api/v1/process", post(process_batch))
+        .with_state(processor);
+
+    let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
+    println!("sky-batch-processor listening on {bind_addr}");
+    axum::serve(listener, app).await?;
+    Ok(())
 }
