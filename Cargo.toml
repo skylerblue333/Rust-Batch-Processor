@@ -1,18 +1,21 @@
 [package]
-name = "app"
-version = "3.0.0"
+name = "sky-batch-processor"
+version = "0.1.0"
 edition = "2021"
+rust-version = "1.80"
+description = "Bounded in-memory batch queue and HTTP service"
+license = "MIT"
 
 [[bin]]
-name = "app"
+name = "sky-batch-processor"
 path = "src/main.rs"
 
 [lib]
-name = "app"
+name = "sky_batch_processor"
 path = "src/lib.rs"
 
 [dependencies]
-actix-web = "4.4"
-tokio = { version = "1.32", features = ["full"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+axum = "0.8"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
