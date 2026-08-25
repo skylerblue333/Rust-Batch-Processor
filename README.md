@@ -1,44 +1,87 @@
-<!-- PORTFOLIO PROJECT PROFILE: maintained by the repository owner -->
+# Sky Batch Processor
 
-## Project profile and code-audit snapshot
+A bounded in-memory Rust batch queue with a small Axum HTTP boundary. The project preserves the repository's original FIFO batch-processing concept while hardening validation, capacity management, duplicate handling, observability, error semantics, CI, and container packaging.
 
-**What this is:** **Rust-Batch-Processor** is a public repository described as: “Enterprise-grade batch processor implementation in Rust. #SkyCoin4444 #AI #Blockchain #DevOps #Innovation” Its dominant language signals are **Rust (2 files)**.
+## Implemented behavior
 
-**Why it has value:** Its value is best understood through the implementation evidence currently present in the repository: **16 tracked files** were observed in the shallow audit, with the source structure and existing documentation providing the project’s specific context. This README does not treat a prototype, experiment, or archive as a production system without supporting evidence.
+- Native Rust queue core with a single mutex-protected state boundary.
+- Configurable processing batch size (`BATCH_SIZE`, default `100`, maximum `1000`).
+- Configurable queue capacity (`MAX_QUEUE`, default `10000`, maximum `100000`).
+- Atomic multi-item enqueue: either the entire request is accepted or none of it is.
+- Caller-supplied `u64` item IDs with duplicate rejection across queued and previously processed items.
+- Payloads must contain 1–16,384 UTF-8 bytes.
+- FIFO processing up to the configured batch size.
+- Bounded tracked-ID set (100,000 maximum) to make the current in-memory idempotency boundary explicit.
+- Poisoned mutexes surface as service-unavailable errors rather than panicking through `unwrap()`.
+- Health, readiness, queue stats, enqueue, and process endpoints.
+- 409 duplicate-ID, 422 validation, 429 capacity, and 503 state-unavailable HTTP mappings.
+- Non-root container image.
 
-**Implementation evidence:** No test-related file was detected by filename heuristics.; 2 dependency or package manifest(s) detected; 2 build/CI/infrastructure signal(s) detected; and 3 documentation or governance file(s) detected. Test filenames observed include none detected. Dependency or package files include `Cargo.toml`, `package.json`. Build, CI, or infrastructure signals include `Dockerfile`, `.github/workflows/ci.yml`.
+## API
 
-**Current status:** The repository is tracked on the `main` branch. The existing source tree, configuration, tests, workflows, and documentation remain authoritative for supported behavior and maturity. A code audit is not a production-readiness certification, and the presence of a test or workflow file does not establish that all checks pass.
+### `GET /health`
+Liveness response.
 
-**Relationship to the wider portfolio:** This repository is one focused component of the broader Skyler Blue Spillers portfolio across AI, software engineering, cloud and DevOps, cybersecurity, blockchain, finance, education, social systems, and creative work. It may provide a service boundary, implementation pattern, experiment, archive, or reusable idea for related repositories. Treat repositories as technical dependencies only where documented interfaces and verified project requirements support that relationship.
+### `GET /ready`
+Checks that processor state can be read.
 
-**Quality and security note:** No obvious secret-like pattern was detected by the limited static scan; this is not a substitute for a security audit. No TODO/FIXME marker was detected in the scanned text files.
+### `GET /api/v1/stats`
+Returns queued count, processed count, tracked IDs, configured batch size, and queue capacity.
 
----
+### `POST /api/v1/enqueue`
+Accepts a JSON array:
 
-# Rust Batch Processor
+```json
+[
+  {"id": 101, "payload": "first"},
+  {"id": 102, "payload": "second"}
+]
+```
 
-![GitHub stars](https://img.shields.io/github/stars/skylerblue333/Rust-Batch-Processor?style=flat-square)
-![GitHub license](https://img.shields.io/github/license/skylerblue333/Rust-Batch-Processor?style=flat-square)
+### `POST /api/v1/process`
+Dequeues up to `BATCH_SIZE` items in FIFO order and returns the processed items plus updated stats.
 
-## 🌟 Overview
-**Rust-Batch-Processor** is a professional-grade project within the **SkyCoin4444** ecosystem. It focuses on delivering high-value solutions in the domain of **Rust**.
+## Run locally
 
-## 🚀 Key Features
-- **Scalable Architecture**: Designed for enterprise-level growth and performance.
-- **Modern Standards**: Implements best practices for clean code and maintainability.
-- **Robust Integration**: Built to work seamlessly within modern cloud-native environments.
+```bash
+cargo run
+```
 
-## 🛠️ Technology Stack
-- **Primary Domain**: Rust
-- **Ecosystem**: SkyCoin4444 Digital Platform
+Configuration example:
 
-## 📂 Structure
-The project is organized into a modular structure to ensure clarity and ease of development.
+```bash
+BATCH_SIZE=50 MAX_QUEUE=5000 BIND_ADDR=127.0.0.1:8080 cargo run
+```
 
-## 👨‍💻 Author
-**Skyler Blue Spillers**
-*Professional Chess Player & Software Engineer*
+## Verification
 
----
-*Powered by SkyCoin4444*
+CI requires:
+
+```bash
+cargo generate-lockfile
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --locked --all-targets
+cargo build --release --locked
+cargo audit
+```
+
+CI also builds the Docker image and verifies non-root execution.
+
+## Architecture
+
+`src/lib.rs` contains the reusable processor and its invariants. `src/main.rs` is the Axum adapter. Keeping the queue domain separate from HTTP allows the core to be tested without a server and reused through another adapter later.
+
+The dependency line intentionally uses Axum rather than retaining the older Actix stack so the product can stay on a current HTTP/2 dependency path and be audited rather than suppressing known dependency advisories.
+
+## SKYCOIN4444 integration
+
+The component can provide a bounded local batch-work boundary for analytics, notifications, exports, or other adapters. Production ecosystem integration should use a stable API/client wrapper and should not copy the queue implementation into the flagship codebase.
+
+## Status and limitations
+
+**Status: Engineering Beta.** Code/container verification is being established; deployment is not verified.
+
+This implementation is process-local and in-memory. Restarting loses the queue and tracked IDs. It does not provide durable persistence, distributed workers, leases, retries, dead-letter queues, exactly-once execution, tenant isolation, authentication, TLS termination, HA, or production deployment. The 100,000 tracked-ID cap means long-running deployments must rotate/restart or adopt durable idempotency storage rather than treating the current service as an unlimited queue.
+
+See `SECURITY.md` and `CHANGELOG.md` for product/security boundaries.

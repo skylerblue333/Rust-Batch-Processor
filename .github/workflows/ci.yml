@@ -1,10 +1,35 @@
-name: CI
-on: [push, pull_request]
+name: rust-batch-ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
 jobs:
-  test:
+  verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo check
-      - run: cargo test
+        with:
+          components: rustfmt, clippy
+      - name: Generate lockfile
+        run: cargo generate-lockfile
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+      - name: Tests
+        run: cargo test --locked --all-targets
+      - name: Release build
+        run: cargo build --release --locked
+      - name: Dependency audit
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit
+      - name: Build image
+        run: docker build -t sky-rust-batch:ci .
+      - name: Verify non-root image
+        run: test "$(docker run --rm --entrypoint id sky-rust-batch:ci -u)" != "0"
