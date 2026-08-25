@@ -47,7 +47,7 @@ impl From<ProcessorError> for ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        let (status, code) = match self.0 {
+        let (status, code) = match &self.0 {
             ProcessorError::DuplicateId(_) => (StatusCode::CONFLICT, "duplicate_id"),
             ProcessorError::CapacityExceeded(_) => (StatusCode::TOO_MANY_REQUESTS, "capacity_exceeded"),
             ProcessorError::InvalidConfig(_) | ProcessorError::InvalidItem(_) => {
